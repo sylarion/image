@@ -1,36 +1,110 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Catalog AI — Fashion Photography Automation Platform
 
-## Getting Started
+**Catalog AI** es una plataforma web profesional para automatizar la creación de fotografías de prendas de vestir de alta costura y retail. Permite a marcas y diseñadores producir sets completos de e-commerce y catálogos editoriales manteniendo **estricta consistencia en la prenda ("Garment Lock") y en la modelo ("Model Lock")**.
 
-First, run the development server:
+---
 
+## 💎 Características Principales
+
+1. **Garment Lock**:
+   - Extracción de atributos críticos (color, textil, trama, bolsillos, detalles estructurales, y reglas de preservación innegociables).
+   - Ficha técnica interactiva editable antes de lanzar la síntesis.
+2. **Model Lock**:
+   - Selección de modelos consistentes (fisionomía, tono de piel, tipo de cuerpo, estilo de cabello).
+   - Garantiza que todas las fotos pertenezcan a la misma sesión fotográfica.
+3. **Paquetes de Producción Dual**:
+   - **E-commerce**: Fondo blanco puro, iluminación uniforme, vistas frente, perfil, espalda y detalle de costura.
+   - **Catálogo Premium**: Poses dinámicas comerciales, escenarios de campaña y atmósfera editorial.
+4. **Pipeline de Validación Visual**:
+   - Score de consistencia porcentual desglosado (Color, Forma, Estampado, Detalles).
+   - Auditoría de umbral (≥90% Aprobado automático, 75-89% Requiere revisión).
+5. **Arquitectura Desacoplada**:
+   - Proveedores de IA abstractos (`ImageGenerationProvider`) con implementación inicial mock de cero dependencias externas.
+   - Capa de repositorio (`ProjectRepository`) lista para conectar bases de datos PostgreSQL/Supabase.
+
+---
+
+## 🛠️ Stack Tecnológico
+
+- **Next.js 16+** (App Router, Server Components y Route Handlers)
+- **React 19**
+- **TypeScript** (Strict mode)
+- **Tailwind CSS v4** con estética editorial oscura (Dark Studio Mode)
+- **Lucide Icons**
+- **Zod** para validación estricta de esquemas
+
+---
+
+## 🚀 Inicio Rápido (Local)
+
+1. Clonar el repositorio:
+   ```bash
+   git clone <repo-url>
+   cd image
+   ```
+
+2. Instalar dependencias:
+   ```bash
+   npm install
+   ```
+
+3. Iniciar el servidor de desarrollo:
+   ```bash
+   npm run dev
+   ```
+
+4. Abrir en el navegador: [http://localhost:3000](http://localhost:3000)
+
+---
+
+## 📦 Construcción y Despliegue en Vercel
+
+### Compilación local
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run build
+npm run start
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Despliegue en Vercel
+La aplicación está 100% optimizada para desplegarse sin configuración adicional en **Vercel**:
+1. Conectar el repositorio de GitHub en el dashboard de Vercel.
+2. Framework Preset: **Next.js**.
+3. No se requieren variables de entorno obligatorias para ejecutar la demo con el proveedor mock.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 🔌 Cómo incorporar un proveedor real de IA
 
-## Learn More
+El sistema utiliza el patrón **Provider Strategy**. Para añadir un nuevo motor (por ejemplo Fal.ai, Replicate, Stable Diffusion o Midjourney API):
 
-To learn more about Next.js, take a look at the following resources:
+1. Crear un archivo que implemente la interfaz `ImageGenerationProvider`:
+   ```typescript
+   // lib/ai/fal-provider.ts
+   import { ImageGenerationProvider, AnalyzeGarmentOptions, GenerateImageOptions } from './provider.interface';
+   import { GarmentLock, GarmentValidationResult } from '@/types';
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+   export class FalAIProvider implements ImageGenerationProvider {
+     readonly id = 'fal-ai';
+     readonly name = 'Fal.ai Flux LoRA Engine';
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+     async analyzeGarment(options: AnalyzeGarmentOptions): Promise<GarmentLock> {
+       // Llamada a modelo VLM (GPT-4o / Claude 3.5 Sonnet / Gemini Vision)
+     }
 
-## Deploy on Vercel
+     async generateImage(options: GenerateImageOptions): Promise<{ outputUrl: string }> {
+       // Llamada a Flux / SDXL con IP-Adapter o LoRA de la prenda
+     }
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+     async validateImage(generatedUrl: string, garment: GarmentLock): Promise<GarmentValidationResult> {
+       // Comparación de embeddings visuales CLIP o análisis de consistencia
+     }
+   }
+   ```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+2. Registrarlo en `lib/ai/index.ts`:
+   ```typescript
+   import { FalAIProvider } from './fal-provider';
+   // Cambiar la instancia en el factory según la variable de entorno AI_PROVIDER
+   ```
+
+Ni los componentes de UI ni las rutas de la API requerirán modificación alguna.
