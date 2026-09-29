@@ -1,9 +1,27 @@
+export * from './detection';
+export * from './dna';
+
 // ==========================================
 // 1. IMAGE ASSET DOMAIN MODEL
 // ==========================================
 
 export type ImageAssetType = 'REFERENCE' | 'GENERATED';
 export type ImageAssetSource = 'UPLOAD' | 'AI' | 'MOCK';
+
+export interface SourceImage {
+  id: string;
+  originalFilename: string;
+  mimeType: 'image/jpeg' | 'image/png' | 'image/webp';
+  byteSize: number;
+  width: number;
+  height: number;
+  sha256: string;
+  storageKey: string;
+  url: string;
+  createdAt: string;
+  role: 'UNKNOWN';
+  source: 'USER_UPLOAD';
+}
 
 export interface ImageAsset {
   id: string;
@@ -16,6 +34,11 @@ export interface ImageAsset {
   mimeType?: string;
   order?: number;
   createdAt: string;
+  sourceImageId?: string;
+  sha256?: string;
+  storageKey?: string;
+  byteSize?: number;
+  providerRequestId?: string;
 }
 
 // ==========================================
@@ -29,6 +52,8 @@ export type ProductionStatus =
   | 'GENERATING'
   | 'VALIDATING'
   | 'COMPLETED'
+  | 'PARTIAL'
+  | 'CANCELLED'
   | 'FAILED';
 
 export type GarmentCategory = 
@@ -95,6 +120,8 @@ export interface GarmentLock {
   mustPreserve: string[];
   colorVariants: ColorVariant[];
   referenceImages: ImageAsset[];
+  garmentDNA?: import('./dna').GarmentDNA;
+  garmentMaster?: import('@/types/garment-master').GarmentMaster;
   coverage?: ReferenceCoverage;
 }
 
@@ -115,7 +142,7 @@ export interface ModelLock {
 // 5. PRODUCTION PROFILES, SHOT TYPES & CONTRACTS
 // ==========================================
 
-export type ProductionStyle = 'STUDIO_WHITE' | 'EDITORIAL_CATALOG';
+export type ProductionStyle = 'STUDIO_WHITE' | 'EDITORIAL_CATALOG' | 'PREMIUM_STUDIO' | 'LIFESTYLE';
 export type ProductionPackageType = 'ECOMMERCE' | 'CATALOG';
 
 // The 4 canonical poses per color variant per production set
@@ -186,11 +213,16 @@ export interface ProductionPoseHistory {
 
 export type JobStatus = 
   | 'QUEUED'
+  | 'PENDING'
+  | 'PROCESSING'
   | 'GENERATING'
   | 'VALIDATING'
+  | 'COMPLETED'
   | 'APPROVED'
+  | 'PARTIAL'
   | 'REVIEW_REQUIRED'
   | 'REJECTED'
+  | 'CANCELLED'
   | 'FAILED';
 
 export type MetricVerifiability = 'PASS' | 'FAIL' | 'REVIEW' | 'NOT_VERIFIABLE';
@@ -204,10 +236,10 @@ export interface ValidationMetricDetail {
 }
 
 export interface ValidationPolicy {
-  minGarmentIdentityScore: number; // default: 90
-  minColorAccuracyScore: number;   // default: 90
-  minShotAccuracyScore: number;    // default: 90
-  minModelIdentityScore: number;   // default: 88
+  minGarmentIdentityScore: number; // default: 90 (GarmentSimilarity)
+  minColorAccuracyScore: number;   // default: 90 (ColorSimilarity)
+  minShotAccuracyScore: number;    // default: 90 (ShotCompliance)
+  minModelIdentityScore: number;   // default: 88 (ModelIdentity)
   minPatternScoreIfVerified: number; // default: 88
   minDetailScoreIfVerified: number;  // default: 85
 }
@@ -215,21 +247,57 @@ export interface ValidationPolicy {
 export interface GarmentValidationResult {
   overallScore: number;
   garmentIdentityScore: number;
+  garmentSimilarityScore?: number;
   colorAccuracyScore: number;
+  colorSimilarityScore?: number;
   shapeScore: number;
   patternScore: number;
   detailScore: number;
   modelIdentityScore: number;
   shotAccuracyScore: number;
+  shotComplianceScore?: number;
   poseDiversityScore: number;
   metrics?: ValidationMetricDetail[];
+  structuralFidelityScore?: number;
+  criticalFaults?: import('@/types/garment-master').CriticalStructuralFault[];
+  comprehensiveAudit?: import('@/types/garment-master').ComprehensiveValidationAudit;
   policyPassed?: boolean;
   failedGates?: string[];
   referenceStatus?: 'REFERENCE_VERIFIED' | 'AI_INFERRED';
   issues: string[];
 }
 
+export interface GenerationPlan {
+  provider: string;
+  model: string;
+  shots: MandatoryShotView[];
+  background: ProductionStyle;
+  aspectRatio: string;
+  resolution: string;
+  quantity: number;
+  productGroup: string;
+  variant: string;
+  selectedModel: string;
+  products: Array<{
+    productGroup: string;
+    variant: string;
+    identity: unknown;
+    colorName: string;
+  }>;
+  analysisRunId?: string;
+  qualityProfile?: string;
+}
+
 export interface GenerationJob {
+  generationModel?: string;
+  resolution?: string;
+  garmentLock?: GarmentLock;
+  garmentMaster?: import('@/types/garment-master').GarmentMaster;
+  anchorAsset?: ImageAsset;
+  analysisRunId?: string;
+  productGroupId?: string;
+  aspectRatio?: string;
+  modelMode?: string;
   id: string;
   projectId: string;
   colorVariantId: string;
@@ -246,6 +314,14 @@ export interface GenerationJob {
   validationScore?: GarmentValidationResult;
   referenceStatus?: 'REFERENCE_VERIFIED' | 'AI_INFERRED';
   rawBenchmark?: RawBenchmarkResult;
+  provider?: string;
+  providerRequestId?: string;
+  startedAt?: string;
+  updatedAt?: string;
+  completedAt?: string;
+  errorCode?: string;
+  errorMessage?: string;
+  userFriendlyMessage?: string;
   createdAt: string;
   error?: string;
 }
@@ -280,7 +356,11 @@ export interface RawBenchmarkResult {
 // ==========================================
 
 export interface GenerationRequest {
+  aspectRatio?: string;
+  resolution?: string;
   garmentLock: GarmentLock;
+  garmentMaster?: import('@/types/garment-master').GarmentMaster;
+  anchorAsset?: ImageAsset;
   colorVariant: ColorVariant;
   modelLock: ModelLock;
   productionStyle: ProductionStyle;
@@ -317,6 +397,8 @@ export interface ProductionMatrixStats {
 }
 
 export interface Project {
+  analysisRunId?: string;
+  productionSelection?: import('@/lib/production/selection').ProductionSelection;
   id: string;
   name: string;
   status: ProductionStatus;
@@ -326,6 +408,9 @@ export interface Project {
   model: ModelLock;
   selectedPackages: ProductionPackageSelection;
   jobs: GenerationJob[];
+  approvedAnchorAsset?: ImageAsset;
+  pricingSnapshot?: import('@/lib/pricing/types').GenerationPricingSnapshot;
+  actualCost?: import('@/lib/pricing/types').ActualGenerationCost;
 }
 
 export interface DashboardMetrics {

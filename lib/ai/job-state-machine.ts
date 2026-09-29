@@ -7,14 +7,25 @@ export const MAX_GENERATION_ATTEMPTS = 3;
  * Disallows arbitrary state jumps from UI components or malicious requests.
  */
 export const ALLOWED_JOB_TRANSITIONS: Record<JobStatus, readonly JobStatus[]> = {
-  QUEUED: ['GENERATING', 'FAILED'],
-  GENERATING: ['VALIDATING', 'FAILED'],
-  VALIDATING: ['APPROVED', 'REVIEW_REQUIRED', 'REJECTED', 'FAILED'],
-  APPROVED: ['GENERATING'], // Allows explicit user regeneration
-  REVIEW_REQUIRED: ['APPROVED', 'GENERATING', 'REJECTED'],
-  REJECTED: ['GENERATING'], // Allows retry
-  FAILED: ['QUEUED', 'GENERATING'], // Allows retry
+  QUEUED: ['GENERATING', 'PROCESSING', 'FAILED', 'CANCELLED'],
+  PENDING: ['QUEUED', 'GENERATING', 'PROCESSING', 'FAILED', 'CANCELLED'],
+  PROCESSING: ['VALIDATING', 'FAILED', 'CANCELLED'],
+  GENERATING: ['VALIDATING', 'FAILED', 'CANCELLED'],
+  VALIDATING: ['APPROVED', 'COMPLETED', 'REVIEW_REQUIRED', 'REJECTED', 'PARTIAL', 'FAILED'],
+  APPROVED: ['FAILED', 'COMPLETED'], // Post-approval errors must reach FAILED
+  COMPLETED: [], // Terminal
+  PARTIAL: ['QUEUED', 'GENERATING', 'PROCESSING', 'FAILED'],
+  REVIEW_REQUIRED: ['APPROVED', 'COMPLETED', 'GENERATING', 'PROCESSING', 'REJECTED', 'FAILED'],
+  REJECTED: ['QUEUED', 'GENERATING', 'PROCESSING', 'FAILED'],
+  FAILED: [], // Terminal! No outgoing transitions allowed
+  CANCELLED: [], // Terminal! No outgoing transitions allowed
 };
+
+export const TERMINAL_JOB_STATUSES: readonly JobStatus[] = ['COMPLETED', 'FAILED', 'CANCELLED'] as const;
+
+export function isTerminalJobStatus(status: JobStatus): boolean {
+  return TERMINAL_JOB_STATUSES.includes(status);
+}
 
 export class JobStateTransitionError extends Error {
   constructor(current: JobStatus, target: JobStatus) {

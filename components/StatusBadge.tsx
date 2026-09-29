@@ -41,6 +41,16 @@ const STATUS_CONFIG: Record<
     icon: CheckCircle2,
     className: 'bg-emerald-950/60 text-emerald-300 border-emerald-800/60',
   },
+  PARTIAL: {
+    label: 'Parcial',
+    icon: AlertCircle,
+    className: 'bg-amber-950/60 text-amber-300 border-amber-800/60',
+  },
+  CANCELLED: {
+    label: 'Cancelado',
+    icon: AlertCircle,
+    className: 'bg-zinc-800 text-zinc-400 border-zinc-700',
+  },
   FAILED: {
     label: 'Error en proceso',
     icon: AlertCircle,

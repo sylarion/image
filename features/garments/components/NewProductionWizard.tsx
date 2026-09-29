@@ -77,9 +77,10 @@ export function NewProductionWizard() {
     }
   ]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [uploadingCount, setUploadingCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     const files = Array.from(e.target.files);
 
@@ -88,7 +89,8 @@ export function NewProductionWizard() {
       return;
     }
 
-    const newImgs: ImageAsset[] = [];
+    setError(null);
+    setUploadingCount((c) => c + files.length);
 
     for (let idx = 0; idx < files.length; idx++) {
       const file = files[idx];
@@ -96,29 +98,76 @@ export function NewProductionWizard() {
       // Validate file size (10MB)
       if (file.size > MAX_FILE_SIZE_BYTES) {
         setError(`El archivo ${file.name} supera el límite de 10MB.`);
-        return;
+        setUploadingCount((c) => Math.max(0, c - 1));
+        continue;
       }
 
       // Validate MIME type
       if (!ALLOWED_IMAGE_MIME_TYPES.includes(file.type as (typeof ALLOWED_IMAGE_MIME_TYPES)[number])) {
         setError(`Formato no permitido en ${file.name}. Solo se aceptan JPG, PNG y WebP.`);
-        return;
+        setUploadingCount((c) => Math.max(0, c - 1));
+        continue;
       }
 
-      newImgs.push({
-        id: `up-${Date.now()}-${idx}`,
+      const tempId = `temp-${Date.now()}-${idx}`;
+      const previewUrl = URL.createObjectURL(file);
+      const tempAsset: ImageAsset = {
+        id: tempId,
         type: 'REFERENCE',
         source: 'UPLOAD',
-        name: file.name.replace(/[^a-zA-Z0-9._-]/g, '_'), // Sanitized filename
-        url: URL.createObjectURL(file),
+        name: file.name,
+        url: previewUrl,
         mimeType: file.type,
         order: images.length + idx,
         createdAt: new Date().toISOString(),
-      });
-    }
+      };
 
-    setImages((prev) => [...prev, ...newImgs]);
-    setError(null);
+      setImages((prev) => [...prev, tempAsset]);
+
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const res = await fetch('/api/uploads', {
+          method: 'POST',
+          body: formData,
+        });
+
+        const json = await res.json();
+        if (!json.success) {
+          throw new Error(json.error || `Error al subir ${file.name}`);
+        }
+
+        const sourceImage = json.data;
+        URL.revokeObjectURL(previewUrl);
+
+        setImages((prev) =>
+          prev.map((img) =>
+            img.id === tempId
+              ? {
+                  ...img,
+                  id: `ref-${sourceImage.id}`,
+                  sourceImageId: sourceImage.id,
+                  url: sourceImage.url,
+                  name: sourceImage.originalFilename,
+                  width: sourceImage.width,
+                  height: sourceImage.height,
+                  mimeType: sourceImage.mimeType,
+                  sha256: sourceImage.sha256,
+                  storageKey: sourceImage.storageKey,
+                  byteSize: sourceImage.byteSize,
+                }
+              : img
+          )
+        );
+      } catch (uploadErr) {
+        console.error('Error subiendo archivo:', uploadErr);
+        setError(uploadErr instanceof Error ? uploadErr.message : `Error al subir ${file.name}`);
+        setImages((prev) => prev.filter((img) => img.id !== tempId));
+      } finally {
+        setUploadingCount((c) => Math.max(0, c - 1));
+      }
+    }
   };
 
   const addPresetSample = (sample: typeof PRESET_SAMPLE_PHOTOS[0]) => {
@@ -174,6 +223,17 @@ export function NewProductionWizard() {
       setError('Tenés que subir al menos una fotografía de referencia');
       return;
     }
+    if (uploadingCount > 0) {
+      setError('Por favor esperá a que terminen de subirse las imágenes');
+      return;
+    }
+
+    // Verify no temporary blob URLs remain
+    const hasPendingBlob = images.some((img) => img.url.startsWith('blob:'));
+    if (hasPendingBlob) {
+      setError('Algunas imágenes aún se están procesando. Aguardá unos segundos.');
+      return;
+    }
 
     try {
       setIsAnalyzing(true);
@@ -184,6 +244,13 @@ export function NewProductionWizard() {
         .map((s) => s.trim())
         .filter(Boolean);
 
+      const payloadImages = images.map((img) => {
+        if (img.sourceImageId) {
+          return { sourceImageId: img.sourceImageId, order: img.order };
+        }
+        return img;
+      });
+
       const res = await fetch('/api/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -191,7 +258,7 @@ export function NewProductionWizard() {
           name: name.trim(),
           category,
           sizes: parsedSizes.length > 0 ? parsedSizes : ['Único'],
-          images,
+          images: payloadImages,
         }),
       });
 
@@ -403,10 +470,15 @@ export function NewProductionWizard() {
         <div className="flex justify-end">
           <button
             type="submit"
-            disabled={isAnalyzing}
+            disabled={isAnalyzing || uploadingCount > 0}
             className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 text-white font-medium text-base shadow-xl shadow-blue-600/20 transition-all cursor-pointer disabled:cursor-not-allowed"
           >
-            {isAnalyzing ? (
+            {uploadingCount > 0 ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span>Subiendo imágenes ({uploadingCount})...</span>
+              </>
+            ) : isAnalyzing ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
                 <span>Analizando producto...</span>

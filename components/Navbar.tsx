@@ -31,11 +31,6 @@ export function Navbar() {
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-full bg-[#11131a] border border-[#1e2230] text-xs text-[#8e96aa]">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span>Motor: <strong className="text-gray-200 font-medium">Simulación</strong></span>
-          </div>
-
           <Link
             href="/productions/new"
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-all shadow-md shadow-blue-600/20 active:scale-95"

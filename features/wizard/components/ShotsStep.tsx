@@ -1,0 +1,109 @@
+'use client';
+
+import React from 'react';
+import { ShotChoiceViewModel } from '../models/wizard.types';
+import { 
+  Check, 
+  ArrowRight, 
+  ArrowLeft,
+  Camera,
+  Eye
+} from 'lucide-react';
+
+interface ShotsStepProps {
+  shots: ShotChoiceViewModel[];
+  onToggleShot: (shotId: ShotChoiceViewModel['id']) => void;
+  onNext: () => void;
+  onBack: () => void;
+}
+
+export function ShotsStep({
+  shots,
+  onToggleShot,
+  onNext,
+  onBack,
+}: ShotsStepProps) {
+  const selectedCount = shots.filter((s) => s.selected).length;
+
+  return (
+    <div className="space-y-6 animate-fade-in">
+      <div className="space-y-1">
+        <h2 className="text-2xl font-bold text-white tracking-tight">
+          Elegí las fotos que querés crear
+        </h2>
+        <p className="text-sm text-gray-400">
+          Seleccioná los ángulos para cada variante de color. Cada foto respeta la moldería exacta de tu prenda.
+        </p>
+      </div>
+
+      {/* Visual Shots Cards Multi-choice */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {shots.map((shot) => {
+          const isSelected = shot.selected;
+          return (
+            <div
+              key={shot.id}
+              onClick={() => onToggleShot(shot.id)}
+              className={`group p-4 rounded-3xl border cursor-pointer transition-all duration-200 select-none flex flex-col justify-between space-y-4 ${
+                isSelected
+                  ? 'bg-[#151928] border-blue-500 shadow-lg ring-1 ring-blue-500/50'
+                  : 'bg-[#11131c] border-[#1e2230] opacity-70 hover:opacity-100 hover:border-gray-700'
+              }`}
+            >
+              {/* Photo Preview Thumbnail */}
+              <div className="aspect-[3/4] w-full rounded-2xl overflow-hidden bg-black/60 relative">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={shot.thumbnail}
+                  alt={shot.label}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                />
+                <div
+                  className={`absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center transition-all ${
+                    isSelected
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'bg-black/60 border border-white/40 text-transparent'
+                  }`}
+                >
+                  <Check className="w-4 h-4" />
+                </div>
+              </div>
+
+              {/* Title & Description */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-base font-bold text-white group-hover:text-blue-400 transition-colors">
+                    {shot.label}
+                  </h3>
+                </div>
+                <p className="text-xs text-gray-400 leading-relaxed">
+                  {shot.description}
+                </p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Navigation Footer */}
+      <div className="flex items-center justify-between pt-4 border-t border-[#1e2230]">
+        <button
+          onClick={onBack}
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl border border-[#232738] hover:bg-[#161925] text-gray-300 text-sm font-medium transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>Volver</span>
+        </button>
+
+        <button
+          onClick={onNext}
+          disabled={selectedCount === 0}
+          className="inline-flex items-center gap-2 px-7 py-3 rounded-2xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:pointer-events-none text-white font-bold text-sm transition-all shadow-lg shadow-blue-600/25 active:scale-98"
+        >
+          <span>Elegir destino de las fotos</span>
+          <ArrowRight className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+}

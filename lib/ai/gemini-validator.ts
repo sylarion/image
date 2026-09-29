@@ -1,3 +1,4 @@
+import { buildGarmentMaster, evaluateStructuralFidelityAudit } from '@/lib/dna/garment-master';
 import { 
   ImageAsset, 
   GarmentLock, 
@@ -32,9 +33,11 @@ export class GeminiImageValidator {
     modelLock: ModelLock;
     shotView: MandatoryShotView;
     referenceAssets: ImageAsset[];
+    garmentMaster?: import('@/types/garment-master').GarmentMaster;
+    anchorAsset?: ImageAsset;
     policy?: ValidationPolicy;
   }): Promise<GarmentValidationResult> {
-    const { generatedAsset, garmentLock, colorVariant, modelLock, shotView, referenceAssets } = context;
+    const { generatedAsset, garmentLock, colorVariant, modelLock, shotView, referenceAssets, garmentMaster, anchorAsset } = context;
     const policy = context.policy || DEFAULT_VALIDATION_POLICY;
     const contract = getShotContract(shotView);
     const coverage = garmentLock.coverage;
@@ -69,6 +72,12 @@ FOTOS EN EL REQUEST:
 - Imagen 1 (Generada): URL: ${generatedAsset.url}
 - Referencias originales: ${referenceAssets.map(r => r.url).join(', ')}
 
+GARMENT MASTER DIRECTIVES (LOCKED ATTRIBUTES):
+- Neckline: ${garmentMaster?.neckline || "Original neckline geometry"}
+- Buttons: ${garmentMaster?.buttonCount !== undefined ? garmentMaster.buttonCount + " buttons" : "Original button layout"}
+- Sleeves: ${garmentMaster?.sleeveType || "Original sleeves"}
+- Seams/Pockets: ${garmentMaster?.pockets || "Original construction"}
+- Locked Attributes must NOT mutate under any circumstances.
 REGLAS DE AUDITORÍA CRÍTICAS:
 1. Si la vista es BACK y NO existe fotografía trasera original en las referencias, la métrica BackConstructionFidelity NO SE PUEDE VERIFICAR. Marcala como status: "NOT_VERIFIABLE". No inventes un score de 100%.
 2. Evalúa numéricamente (0 a 100) cada una de las siguientes dimensiones:
@@ -95,12 +104,42 @@ Devolvé EXCLUSIVAMENTE este JSON:
 }
 `;
 
+    const { resolveImageBytes } = await import('@/lib/storage/image-storage');
+    const parts: unknown[] = [{ text: promptText }];
+
+    // Attach real multimodal bytes: Generated Asset
+    const generatedResolved = await resolveImageBytes(generatedAsset);
+    if (generatedResolved) {
+      parts.push({ text: '[IMAGEN GENERADA A AUDITAR]:' });
+      parts.push({
+        inline_data: {
+          mime_type: generatedResolved.mimeType,
+          data: generatedResolved.buffer.toString('base64'),
+        },
+      });
+    }
+
+    // Attach real multimodal bytes: Original Reference Assets
+    for (let i = 0; i < referenceAssets.length; i++) {
+      const ref = referenceAssets[i];
+      const refResolved = await resolveImageBytes(ref);
+      if (refResolved) {
+        parts.push({ text: `[REFERENCIA ORIGINAL #${i + 1} (${ref.name || 'foto'})]:` });
+        parts.push({
+          inline_data: {
+            mime_type: refResolved.mimeType,
+            data: refResolved.buffer.toString('base64'),
+          },
+        });
+      }
+    }
+
     try {
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: promptText }] }],
+          contents: [{ parts }],
           generationConfig: {
             temperature: 0.1,
             responseMimeType: 'application/json',
@@ -116,14 +155,15 @@ Devolvé EXCLUSIVAMENTE este JSON:
       const outputText = resJson.candidates?.[0]?.content?.parts?.[0]?.text;
       const parsed = JSON.parse(outputText || '{}');
 
-      const garmentIdentityScore = parsed.garmentIdentityScore || 90;
-      const colorAccuracyScore = parsed.colorAccuracyScore || 90;
-      const shapeScore = parsed.shapeScore || 90;
-      const patternScore = parsed.patternScore || 88;
-      const detailScore = parsed.detailScore || 85;
-      const modelIdentityScore = parsed.modelIdentityScore || 88;
-      const shotAccuracyScore = parsed.shotAccuracyScore || 90;
-      const poseDiversityScore = parsed.poseDiversityScore || 90;
+      const readScore = (value: unknown): number => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100 ? value : 0;
+      const garmentIdentityScore = readScore(parsed.garmentIdentityScore);
+      const colorAccuracyScore = readScore(parsed.colorAccuracyScore);
+      const shapeScore = readScore(parsed.shapeScore);
+      const patternScore = readScore(parsed.patternScore);
+      const detailScore = readScore(parsed.detailScore);
+      const modelIdentityScore = readScore(parsed.modelIdentityScore);
+      const shotAccuracyScore = readScore(parsed.shotAccuracyScore);
+      const poseDiversityScore = readScore(parsed.poseDiversityScore);
       const issues: string[] = parsed.issues || [];
 
       // Evaluate Hard Gates
@@ -141,7 +181,30 @@ Devolvé EXCLUSIVAMENTE este JSON:
         failedGates.push(`ModelIdentity (${modelIdentityScore}) < min (${policy.minModelIdentityScore})`);
       }
 
-      const policyPassed = failedGates.length === 0;
+      // Structural Fidelity Hard Gates Evaluation
+      const master = garmentMaster || garmentLock.garmentMaster || buildGarmentMaster({ garmentLock });
+      const structuralAudit = evaluateStructuralFidelityAudit({
+        master,
+        modelLock,
+        targetVariant: colorVariant,
+        shotView,
+        auditMetrics: {
+          garmentSimilarity: garmentIdentityScore,
+          modelIdentityConsistency: modelIdentityScore,
+          colorVariantConsistency: colorAccuracyScore,
+          shotCompliance: shotAccuracyScore,
+        },
+        anchorAsset,
+      });
+      const structuralFidelityScore = structuralAudit.metrics.structuralFidelity;
+      const criticalFaults = structuralAudit.criticalFaults;
+      if (criticalFaults.length > 0) {
+        for (const fault of criticalFaults) {
+          failedGates.push(`Hard Gate Estructural: ${fault}`);
+        }
+        issues.push(...structuralAudit.issues);
+      }
+      const policyPassed = failedGates.length === 0 && structuralAudit.status !== 'REJECTED';
 
       const overallScore = Math.round(
         (garmentIdentityScore + colorAccuracyScore + shapeScore + patternScore + detailScore + modelIdentityScore + shotAccuracyScore + poseDiversityScore) / 8
@@ -150,7 +213,13 @@ Devolvé EXCLUSIVAMENTE este JSON:
       return {
         overallScore,
         garmentIdentityScore,
+        garmentSimilarityScore: garmentIdentityScore,
+        structuralFidelityScore,
+        criticalFaults,
+        comprehensiveAudit: structuralAudit,
         colorAccuracyScore,
+        colorSimilarityScore: colorAccuracyScore,
+        shotComplianceScore: shotAccuracyScore,
         shapeScore,
         patternScore,
         detailScore,
@@ -164,22 +233,8 @@ Devolvé EXCLUSIVAMENTE este JSON:
       };
     } catch (err: unknown) {
       console.error('Error during real Gemini image validation:', err);
-      // Fallback safe evaluation if API fails
-      return {
-        overallScore: 88,
-        garmentIdentityScore: 88,
-        colorAccuracyScore: 89,
-        shapeScore: 90,
-        patternScore: 88,
-        detailScore: 85,
-        modelIdentityScore: 88,
-        shotAccuracyScore: 90,
-        poseDiversityScore: 90,
-        policyPassed: false,
-        failedGates: ['Fallo en respuesta del validador multimodal real'],
-        referenceStatus,
-        issues: ['Fallo de conectividad en validador real'],
-      };
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`VALIDATION_FAILED: ${msg}`);
     }
   }
 }

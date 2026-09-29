@@ -4,6 +4,24 @@ import { getImageGenerationProvider } from '@/lib/ai';
 import { transitionJobState, canAttemptRegeneration } from '@/lib/ai/job-state-machine';
 import { evaluateValidationStatus } from '@/lib/ai/validation';
 
+export async function GET(
+  request: Request,
+  props: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await props.params;
+    const repository = getProjectRepository();
+    const project = await repository.getById(id);
+    if (!project) {
+      return NextResponse.json({ success: false, error: 'Proyecto no encontrado' }, { status: 404 });
+    }
+    return NextResponse.json({ success: true, data: project.jobs });
+  } catch (error) {
+    console.error('Error fetching project jobs:', error);
+    return NextResponse.json({ success: false, error: 'Error del servidor' }, { status: 500 });
+  }
+}
+
 export async function POST(
   request: Request,
   props: { params: Promise<{ id: string }> }

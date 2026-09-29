@@ -39,5 +39,18 @@ export interface ImageGenerationProvider {
   /**
    * Compares the generated result with the source Garment Lock to verify fidelity.
    */
-  validateImage(generatedAsset: ImageAsset, garment: GarmentLock): Promise<GarmentValidationResult>;
+  validateImage(
+    generatedAsset: ImageAsset,
+    garment: GarmentLock,
+    options?: {
+      colorVariant?: import('@/types').ColorVariant;
+      modelLock?: import('@/types').ModelLock;
+      shotView?: import('@/types').MandatoryShotView;
+    }
+  ): Promise<GarmentValidationResult>;
+
+  /**
+   * Estimates generation cost based on image count and requested quality profile.
+   */
+  estimateCost?(request: import('@/lib/pricing/types').CostEstimationRequest): Promise<import('@/lib/pricing/types').GenerationCostEstimate>;
 }

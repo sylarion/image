@@ -35,19 +35,27 @@ export const MandatoryShotViewSchema = z.enum([
 export const ProductionStyleSchema = z.enum([
   'STUDIO_WHITE',
   'EDITORIAL_CATALOG',
+  'PREMIUM_STUDIO',
+  'LIFESTYLE',
 ]);
 
 export const ImageAssetSchema = z.object({
   id: z.string().min(1),
   type: z.enum(['REFERENCE', 'GENERATED']),
   source: z.enum(['UPLOAD', 'AI', 'MOCK']),
-  url: z.string().min(1),
+  url: z.string().min(1).refine((url) => !url.startsWith('blob:'), {
+    message: 'Las URLs "blob:" no están permitidas en ImageAsset.',
+  }),
   name: z.string().optional(),
   width: z.number().positive().optional(),
   height: z.number().positive().optional(),
   mimeType: z.string().optional(),
   order: z.number().int().nonnegative().optional(),
   createdAt: z.string().default(() => new Date().toISOString()),
+  sourceImageId: z.string().optional(),
+  sha256: z.string().optional(),
+  storageKey: z.string().optional(),
+  byteSize: z.number().int().nonnegative().optional(),
 });
 
 export const CoverageStatusSchema = z.enum([
@@ -119,11 +127,19 @@ export const ProductionPackageSelectionSchema = z.object({
   message: 'Debe seleccionar al menos un set de producción (Mercado Libre / Fondo Blanco o Catálogo Premium)',
 });
 
+export const ProjectImageInputSchema = z.union([
+  z.object({
+    sourceImageId: z.string().min(1, 'sourceImageId es requerido'),
+    order: z.number().int().nonnegative().optional(),
+  }),
+  ImageAssetSchema,
+]);
+
 export const CreateProjectSchema = z.object({
   name: z.string().min(2, 'El nombre de la producción debe tener al menos 2 caracteres'),
   category: GarmentCategorySchema,
   sizes: z.array(z.string()).min(1, 'Debe especificar al menos un talle'),
-  images: z.array(ImageAssetSchema)
+  images: z.array(ProjectImageInputSchema)
     .min(1, 'Debe cargar al menos una fotografía')
     .max(MAX_REFERENCE_IMAGES, `Límite máximo de ${MAX_REFERENCE_IMAGES} fotos alcanzado`),
 });

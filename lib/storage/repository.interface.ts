@@ -1,4 +1,4 @@
-import { Project, DashboardMetrics, GenerationJob } from '@/types';
+import { Project, DashboardMetrics, GenerationJob, JobStatus } from '@/types';
 
 export interface IProjectRepository {
   getAll(): Promise<Project[]>;
@@ -7,7 +7,7 @@ export interface IProjectRepository {
   update(id: string, updates: Partial<Project>): Promise<Project>;
   delete(id: string): Promise<boolean>;
   getMetrics(): Promise<DashboardMetrics>;
-  updateJob(projectId: string, job: GenerationJob): Promise<Project>;
+  updateJob(projectId: string, job: GenerationJob, expectedStatus?: JobStatus): Promise<Project>;
 }
 
 /**

@@ -4,6 +4,7 @@ import {
   ProductionStyle
 } from '@/types';
 import { getShotContract } from '../shot-contracts';
+import { compileGarmentMasterDirectives } from '@/lib/dna/garment-master';
 
 export interface CompiledPrompt {
   productIdentity: string[];
@@ -31,6 +32,14 @@ const PRODUCTION_STYLE_SPECIFICATIONS: Record<
     composition: string;
   }
 > = {
+  PREMIUM_STUDIO: {
+    name: 'Premium studio', lighting: 'Soft neutral studio lighting with subtle shadows',
+    background: 'Minimal seamless neutral studio', composition: 'Centered product photography',
+  },
+  LIFESTYLE: {
+    name: 'Lifestyle', lighting: 'Natural warm daylight',
+    background: 'Everyday elegant urban location', composition: 'Natural fashion photography with garment in focus',
+  },
   STUDIO_WHITE: {
     name: 'Mercado Libre / E-commerce Studio White',
     lighting: 'High-CRI uniform softbox studio illumination, balanced 5500K neutral light, zero harsh shadows, true-to-life textile rendering',
@@ -109,6 +118,7 @@ export function compileGenerationPrompt(request: GenerationRequest): CompiledPro
     `skin tone: ${modelLock.skinTone}`,
     `hair features: ${modelLock.hairColor}, ${modelLock.hairLength}, ${modelLock.hairStyle}`,
     'identical facial features, eye color, and makeup across all shots',
+    ...(request.anchorAsset?.url ? [`secondary visual anchor active: maintain exact facial morphology, skin tone (${modelLock.skinTone}), and hair features identical to approved anchor asset ${request.anchorAsset.url}`] : []),
   ];
 
   // 4. SHOT DIRECTION & FORMAL SHOT CONTRACT
@@ -158,7 +168,11 @@ export function compileGenerationPrompt(request: GenerationRequest): CompiledPro
   }
 
   // 6. MUST PRESERVE RULES (Inviolable)
+  const master = request.garmentMaster || garmentLock.garmentMaster;
+  const masterDirectives = master ? compileGarmentMasterDirectives(master, colorVariant.name, shotView) : [];
+
   const mustPreserve: string[] = [
+    ...masterDirectives,
     ...garmentLock.mustPreserve.map((rule) => `EXACT PRESERVATION: ${rule}`),
     `preserve exact color balance of ${colorVariant.name} (${colorVariant.colorDescription})`,
     'preserve authentic textile drape, fabric weight, and hemline drop',
@@ -171,8 +185,11 @@ export function compileGenerationPrompt(request: GenerationRequest): CompiledPro
   // 7. MUST NOT CHANGE RULES
   const mustNotChange: string[] = [
     'do not alter garment cut, neckline, sleeve length, or pocket placement',
+    'do not alter button count, button placement, neckline geometry, or sleeve cut between color variants',
+    'a color variant is strictly the same product; do not redesign the garment or invent details',
     'do not recolor accents or floral embroidery arbitrarily',
     'do not change model facial features or body proportions',
+    'do not substitute the selected model identity with any other face or body type',
     'do not create fake 3/4 poses when back or side is requested',
     'do not allow model to look away from camera; eye contact is mandatory in all shots',
     'do not add extra garments, jackets, unauthorized jewelry, or background clutter',

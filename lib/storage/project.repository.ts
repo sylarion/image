@@ -1,7 +1,15 @@
+import { LocalJsonStore } from './local-json';
 import { Project, DashboardMetrics, GenerationJob, StorageMode } from '@/types';
 import { IProjectRepository } from './repository.interface';
 import { INITIAL_MOCK_PROJECTS } from '../constants/mock-projects';
 import { DatabaseProjectRepository } from './database.repository';
+
+export class OptimisticLockError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'OptimisticLockError';
+  }
+}
 
 /**
  * In-memory repository with global singleton pattern.
@@ -11,9 +19,31 @@ import { DatabaseProjectRepository } from './database.repository';
  */
 class InMemoryProjectRepository implements IProjectRepository {
   private projects: Map<string, Project> = new Map();
+  private store = process.env.NODE_ENV === 'test' ? null : new LocalJsonStore<Project>('projects');
+  private projectQueues = new Map<string, Promise<void>>();
+
+  private async withProjectLock<T>(projectId: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.projectQueues.get(projectId) || Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const queued = previous.then(() => current);
+    this.projectQueues.set(projectId, queued);
+
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (this.projectQueues.get(projectId) === queued) {
+        this.projectQueues.delete(projectId);
+      }
+    }
+  }
 
   constructor() {
-    this.seed();
+    if (process.env.AI_MODE === 'mock' || process.env.NODE_ENV === 'test') this.seed();
   }
 
   private seed() {
@@ -23,23 +53,25 @@ class InMemoryProjectRepository implements IProjectRepository {
   }
 
   async getAll(): Promise<Project[]> {
+    if (this.store) for (const p of await this.store.all()) this.projects.set(p.id,p);
     const list = Array.from(this.projects.values());
     return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
 
   async getById(id: string): Promise<Project | null> {
-    const proj = this.projects.get(id);
+    const proj = (await this.store?.get(id)) || this.projects.get(id);
     if (!proj) return null;
     return JSON.parse(JSON.stringify(proj));
   }
 
   async create(project: Project): Promise<Project> {
     this.projects.set(project.id, JSON.parse(JSON.stringify(project)));
+    await this.store?.save(project.id,project);
     return project;
   }
 
   async update(id: string, updates: Partial<Project>): Promise<Project> {
-    const current = this.projects.get(id);
+    const current = await this.getById(id);
     if (!current) {
       throw new Error(`Project with ID ${id} not found`);
     }
@@ -49,15 +81,17 @@ class InMemoryProjectRepository implements IProjectRepository {
       updatedAt: new Date().toISOString(),
     };
     this.projects.set(id, updated);
+    await this.store?.save(id,updated);
     return JSON.parse(JSON.stringify(updated));
   }
 
   async delete(id: string): Promise<boolean> {
-    return this.projects.delete(id);
+    const disk = await this.store?.delete(id);
+    return this.projects.delete(id) || Boolean(disk);
   }
 
   async getMetrics(): Promise<DashboardMetrics> {
-    const all = Array.from(this.projects.values());
+    const all = await this.getAll();
     let totalGeneratedImages = 0;
     let approvedImages = 0;
     let pendingJobs = 0;
@@ -84,28 +118,38 @@ class InMemoryProjectRepository implements IProjectRepository {
     };
   }
 
-  async updateJob(projectId: string, updatedJob: GenerationJob): Promise<Project> {
-    const current = this.projects.get(projectId);
-    if (!current) {
-      throw new Error(`Project ${projectId} not found`);
-    }
-    const jobIndex = current.jobs.findIndex((j) => j.id === updatedJob.id);
-    if (jobIndex >= 0) {
-      current.jobs[jobIndex] = updatedJob;
-    } else {
-      current.jobs.push(updatedJob);
-    }
-    current.updatedAt = new Date().toISOString();
+  async updateJob(projectId: string, updatedJob: GenerationJob, expectedStatus?: import('@/types').JobStatus): Promise<Project> {
+    return this.withProjectLock(projectId, async () => {
+      const current = await this.getById(projectId);
+      if (!current) {
+        throw new Error(`Project ${projectId} not found`);
+      }
+      const jobIndex = current.jobs.findIndex((j) => j.id === updatedJob.id);
+      if (jobIndex >= 0) {
+        if (expectedStatus && current.jobs[jobIndex].status !== expectedStatus) {
+          throw new OptimisticLockError(
+            `OptimisticLockError: Job ${updatedJob.id} expected status '${expectedStatus}' but found '${current.jobs[jobIndex].status}'.`
+          );
+        }
+        current.jobs[jobIndex] = updatedJob;
+      } else {
+        current.jobs.push(updatedJob);
+      }
+      current.updatedAt = new Date().toISOString();
 
-    const allFinished = current.jobs.length > 0 && current.jobs.every(
-      (j) => j.status === 'APPROVED' || j.status === 'REVIEW_REQUIRED' || j.status === 'REJECTED' || j.status === 'FAILED'
-    );
-    if (allFinished) {
-      current.status = 'COMPLETED';
-    }
+      const allFinished = current.jobs.length > 0 && current.jobs.every(
+        (j) => j.status === 'APPROVED' || j.status === 'REVIEW_REQUIRED' || j.status === 'REJECTED' || j.status === 'FAILED'
+      );
+      if (allFinished) {
+        const hasFailed = current.jobs.some((j) => j.status === 'FAILED' || j.status === 'REJECTED');
+        const hasApproved = current.jobs.some((j) => j.status === 'APPROVED' || j.status === 'REVIEW_REQUIRED');
+        current.status = hasFailed ? (hasApproved ? 'PARTIAL' : 'FAILED') : 'COMPLETED';
+      }
 
-    this.projects.set(projectId, current);
-    return JSON.parse(JSON.stringify(current));
+      this.projects.set(projectId, current);
+      await this.store?.save(projectId, current);
+      return JSON.parse(JSON.stringify(current));
+    });
   }
 }
 

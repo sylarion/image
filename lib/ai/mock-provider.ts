@@ -178,26 +178,28 @@ export class MockImageGenerationProvider implements ImageGenerationProvider {
     };
   }
 
-  async validateImage(generatedAsset: ImageAsset, garment: GarmentLock): Promise<GarmentValidationResult> {
-    const firstVariant = garment.colorVariants[0] || DEFAULT_COLOR_VARIANTS[0];
+  async validateImage(
+    generatedAsset: ImageAsset,
+    garment: GarmentLock,
+    options?: {
+      colorVariant?: import('@/types').ColorVariant;
+      modelLock?: import('@/types').ModelLock;
+      shotView?: import('@/types').MandatoryShotView;
+    }
+  ): Promise<GarmentValidationResult> {
+    const firstVariant = options?.colorVariant || garment.colorVariants[0] || DEFAULT_COLOR_VARIANTS[0];
+    if (!options?.modelLock?.modelId) {
+      throw new Error('MODEL_LOCK_REQUIRED: Se requiere un modelLock explícito para validar la imagen.');
+    }
+    const targetModel = options.modelLock;
+    const targetShot = options?.shotView || 'FRONT';
 
     return validateGeneratedAsset({
       generatedAsset,
       garmentLock: garment,
       colorVariant: firstVariant,
-      modelLock: {
-        modelId: 'mod-default',
-        name: 'Modelo 01',
-        gender: 'Femenino',
-        apparentAge: '25 años',
-        bodyType: 'Editorial Standard',
-        skinTone: 'Oliva claro',
-        hairColor: 'Castaño oscuro',
-        hairLength: 'Largo con ondas',
-        hairStyle: 'Raya al medio',
-        previewUrl: '',
-      },
-      shotView: 'FRONT',
+      modelLock: targetModel,
+      shotView: targetShot,
       referenceAssets: garment.referenceImages,
     });
   }

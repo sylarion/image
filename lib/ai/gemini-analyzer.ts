@@ -92,26 +92,26 @@ Devolvé EXCLUSIVAMENTE un objeto JSON válido con este formato:
 }
 `;
 
-    // Format content parts with image URLs or base64
+    // Format content parts with real multimodal image bytes
+    const { resolveImageBytes } = await import('@/lib/storage/image-storage');
     const parts: unknown[] = [{ text: promptText }];
 
     for (const img of options.referenceImages) {
-      if (img.url.startsWith('data:')) {
-        const matches = img.url.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
-        if (matches) {
-          parts.push({
-            inline_data: {
-              mime_type: matches[1],
-              data: matches[2],
-            },
-          });
-        }
-      } else {
-        // Direct image reference text context for URL
+      const resolved = await resolveImageBytes(img);
+      if (resolved) {
         parts.push({
-          text: `[REFERENCE IMAGE URL: ${img.url}]`,
+          inline_data: {
+            mime_type: resolved.mimeType,
+            data: resolved.buffer.toString('base64'),
+          },
         });
+      } else {
+        console.warn(`[GeminiGarmentAnalyzer] No se pudieron resolver los bytes para la imagen: ${img.name || img.id}`);
       }
+    }
+
+    if (parts.length <= 1) {
+      throw new Error('No se pudieron resolver los bytes binarios de las imágenes de referencia para el análisis multimodal de Gemini.');
     }
 
     try {

@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 400" width="100%" height="100%">
+  <defs>
+    <linearGradient id="warmSunlight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#451a03" />
+      <stop offset="40%" stop-color="#78350f" />
+      <stop offset="100%" stop-color="#1c1917" />
+    </linearGradient>
+    <radialGradient id="sunFlare" cx="80%" cy="15%" r="60%">
+      <stop offset="0%" stop-color="#fef08a" stop-opacity="0.4" />
+      <stop offset="50%" stop-color="#f59e0b" stop-opacity="0.1" />
+      <stop offset="100%" stop-color="#000000" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <!-- Warm Urban Daylight Backdrop -->
+  <rect width="600" height="400" rx="16" fill="url(#warmSunlight)" stroke="#78350f" stroke-width="2"/>
+  
+  <!-- Subtle Urban Bokeh Circles -->
+  <circle cx="480" cy="90" r="120" fill="url(#sunFlare)" />
+  <circle cx="120" cy="110" r="45" fill="#fde047" opacity="0.08" />
+  <circle cx="210" cy="70" r="30" fill="#fde047" opacity="0.06" />
+  <circle cx="450" cy="180" r="60" fill="#fde047" opacity="0.05" />
+
+  <!-- Urban Street / Pavement Horizon Line -->
+  <line x1="0" y1="290" x2="600" y2="290" stroke="#78350f" stroke-width="1.5" />
+  <ellipse cx="300" cy="325" rx="130" ry="14" fill="#1c1917" opacity="0.8" />
+
+  <!-- Garment in Warm Daylight -->
+  <path d="M 235 90 C 255 105, 345 105, 365 90 L 400 135 L 370 155 L 355 135 L 355 310 L 245 310 L 245 135 L 230 155 L 200 135 Z" 
+        fill="#10b981" 
+        stroke="#6ee7b7" 
+        stroke-width="2" />
+
+  <!-- Lifestyle Badge -->
+  <rect x="20" y="20" width="160" height="28" rx="6" fill="#d97706" />
+  <text x="100" y="38" font-family="system-ui, sans-serif" font-size="11" font-weight="700" fill="#FFFFFF" text-anchor="middle" letter-spacing="0.5">LIFESTYLE URBANO</text>
+
+  <!-- Bottom Bar -->
+  <rect x="0" y="350" width="600" height="50" rx="0 0 16 16" fill="#1c1917" />
+  <text x="300" y="380" font-family="system-ui, sans-serif" font-size="12" font-weight="600" fill="#d6d3d1" text-anchor="middle">Luz natural de día • Entorno cotidiano elegante • Ideal para Instagram</text>
+</svg>

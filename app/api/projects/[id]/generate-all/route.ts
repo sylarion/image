@@ -24,6 +24,22 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Proyecto no encontrado' }, { status: 404 });
     }
 
+    // Wizard projects already own their exact matrix. Never rebuild a fixed matrix.
+    if (project.productionSelection) {
+      const { getAnalysisRunRepository } = await import('@/lib/storage/analysis-run.repository');
+      const { createSelectedProduction } = await import('@/lib/production/selection');
+      const run = await getAnalysisRunRepository().getById(project.analysisRunId!);
+      if (!run) throw new Error('INVALID_ANALYSIS');
+      const verified = createSelectedProduction(run, project.productionSelection);
+      const keys = (jobs:GenerationJob[]) => jobs.map(j=>`${j.productGroupId}/${j.colorVariantId}/${j.shotView}/${j.productionStyle}`).sort().join('|');
+      if (verified.jobs.length !== project.jobs.length || keys(verified.jobs)!==keys(project.jobs)) throw new Error('JOB_COUNT_MISMATCH');
+      const { GenerationJobRunner } = await import('@/lib/ai/job-runner');
+      // Preserve the exact persisted matrix and delegate its execution to the
+      // runner. This legacy endpoint must not leave verified wizard jobs QUEUED.
+      GenerationJobRunner.triggerRun(id, 2);
+      return NextResponse.json({success:true,data:project});
+    }
+
     const { selectedPackages, garment, model } = project;
     const activeVariants = garment.colorVariants.filter((v) => v.selected);
 
@@ -34,7 +50,7 @@ export async function POST(
       if (activeVariants.length > 1) {
         return NextResponse.json({
           success: false,
-          error: `[Cost Guard] En modo REAL AI Phase 1, solo se permite generar 1 variante de color por sesión (máximo 8 fotografías) para proteger el presupuesto. Desactivá los demás colores temporalmente o cambiá a AI_MODE=mock.`,
+          error: `[Cost Guard] Solo se permite generar 1 variante de color por sesión (máximo 8 fotografías) para proteger el presupuesto. Desactivá los demás colores temporalmente.`,
         }, { status: 400 });
       }
     }
@@ -91,7 +107,7 @@ export async function POST(
 
           const rawBenchmark: RawBenchmarkResult = {
             experimentId: 'bakeoff-v1',
-            provider: config.generationProvider === 'fal' ? 'fal' : 'mock',
+            provider: 'fal',
             model: config.generationModel,
             shot: shot.view,
             promptVersion: 'v1',

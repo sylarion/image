@@ -10,6 +10,7 @@ import {
 } from '@/types';
 import { getShotContract } from '../shot-contracts';
 import { getShotReferenceStatus } from '../reference-coverage';
+import { buildGarmentMaster, evaluateStructuralFidelityAudit } from '@/lib/dna/garment-master';
 
 /**
  * Standard enterprise validation policy for Catalog AI.
@@ -33,11 +34,24 @@ export const VALIDATION_THRESHOLDS = {
 export interface ValidationAuditContext {
   generatedAsset: ImageAsset;
   garmentLock: GarmentLock;
+  garmentMaster?: import('@/types/garment-master').GarmentMaster;
+  anchorAsset?: ImageAsset;
   colorVariant: ColorVariant;
   modelLock: ModelLock;
   shotView: MandatoryShotView;
   referenceAssets: ImageAsset[];
   policy?: ValidationPolicy;
+  faults?: {
+    hasModelMismatch?: boolean;
+    hasButtonMismatch?: boolean;
+    hasNecklineAltered?: boolean;
+    hasSleeveMutated?: boolean;
+    hasSeamMissing?: boolean;
+    hasPocketInvented?: boolean;
+    hasSilhouetteAltered?: boolean;
+    hasHemLengthAltered?: boolean;
+    hasPatternMutated?: boolean;
+  };
 }
 
 /**
@@ -78,7 +92,8 @@ export async function validateGeneratedAsset(
   const referenceStatus = getShotReferenceStatus(shotView, coverage);
 
   // 2. Validate reference resolution & asset fidelity
-  if (referenceAssets.length >= 2 && generatedAsset.url) {
+  const refs = referenceAssets || garmentLock.referenceImages || [];
+  if (refs.length >= 2 && generatedAsset.url) {
     garmentIdentityScore = Math.min(100, garmentIdentityScore + 2);
     detailScore = Math.min(100, detailScore + 2);
   }
@@ -146,19 +161,24 @@ export async function validateGeneratedAsset(
     });
   }
 
-  // 6. HARD GATES EVALUATION
-  // Never approve by simple average if any critical hard gate fails
-  if (garmentIdentityScore < policy.minGarmentIdentityScore) {
-    failedGates.push(`GarmentIdentityScore (${garmentIdentityScore}) below required minimum (${policy.minGarmentIdentityScore})`);
+  const garmentSimilarityScore = garmentIdentityScore;
+  const colorSimilarityScore = colorAccuracyScore;
+  const shotComplianceScore = shotAccuracyScore;
+
+  // 6. HARD GATES EVALUATION (Post-Generation QA)
+  // Never approve by simple average if any critical hard gate fails:
+  // ModelIdentity >= 88, GarmentSimilarity >= 90, ColorSimilarity >= 90, ShotCompliance >= 90
+  if (garmentSimilarityScore < policy.minGarmentIdentityScore) {
+    failedGates.push(`GarmentSimilarity (${garmentSimilarityScore}) below required minimum (${policy.minGarmentIdentityScore})`);
   }
-  if (colorAccuracyScore < policy.minColorAccuracyScore) {
-    failedGates.push(`ColorAccuracyScore (${colorAccuracyScore}) below required minimum (${policy.minColorAccuracyScore})`);
+  if (colorSimilarityScore < policy.minColorAccuracyScore) {
+    failedGates.push(`ColorSimilarity (${colorSimilarityScore}) below required minimum (${policy.minColorAccuracyScore})`);
   }
-  if (shotAccuracyScore < policy.minShotAccuracyScore) {
-    failedGates.push(`ShotAccuracyScore (${shotAccuracyScore}) below required minimum (${policy.minShotAccuracyScore})`);
+  if (shotComplianceScore < policy.minShotAccuracyScore) {
+    failedGates.push(`ShotCompliance (${shotComplianceScore}) below required minimum (${policy.minShotAccuracyScore})`);
   }
   if (modelIdentityScore < policy.minModelIdentityScore) {
-    failedGates.push(`ModelIdentityScore (${modelIdentityScore}) below required minimum (${policy.minModelIdentityScore})`);
+    failedGates.push(`ModelIdentity (${modelIdentityScore}) below required minimum (${policy.minModelIdentityScore})`);
   }
   if (coverage?.pattern === 'VERIFIED' && patternScore < policy.minPatternScoreIfVerified) {
     failedGates.push(`PatternScore (${patternScore}) below required minimum (${policy.minPatternScoreIfVerified})`);
@@ -167,11 +187,48 @@ export async function validateGeneratedAsset(
     failedGates.push(`DetailScore (${detailScore}) below required minimum (${policy.minDetailScoreIfVerified})`);
   }
 
-  const policyPassed = failedGates.length === 0;
+  // 7. GARMENT MASTER STRUCTURAL FIDELITY & MODEL HARD GATES
+  const master = context.garmentMaster || garmentLock.garmentMaster || buildGarmentMaster({ garmentLock });
+  const structuralAudit = evaluateStructuralFidelityAudit({
+    master,
+    modelLock: context.modelLock,
+    targetVariant: colorVariant,
+    shotView,
+    auditMetrics: {
+      garmentSimilarity: garmentSimilarityScore,
+      modelIdentityConsistency: modelIdentityScore,
+      colorVariantConsistency: colorAccuracyScore,
+      shotCompliance: shotAccuracyScore,
+    },
+    anchorAsset: context.anchorAsset,
+    hasModelMismatch: context.faults?.hasModelMismatch,
+    hasButtonMismatch: context.faults?.hasButtonMismatch,
+    hasNecklineAltered: context.faults?.hasNecklineAltered,
+    hasSleeveMutated: context.faults?.hasSleeveMutated,
+    hasSeamMissing: context.faults?.hasSeamMissing,
+    hasPocketInvented: context.faults?.hasPocketInvented,
+    hasSilhouetteAltered: context.faults?.hasSilhouetteAltered,
+    hasHemLengthAltered: context.faults?.hasHemLengthAltered,
+    hasPatternMutated: context.faults?.hasPatternMutated,
+  });
 
-  if (!policyPassed) {
+  const structuralFidelityScore = structuralAudit.metrics.structuralFidelity;
+  const criticalFaults = structuralAudit.criticalFaults;
+
+  if (criticalFaults.length > 0) {
+    for (const fault of criticalFaults) {
+      failedGates.push(`Hard Gate Estructural: ${fault}`);
+    }
+    issues.push(...structuralAudit.issues);
+  }
+
+  const policyPassed = failedGates.length === 0 && structuralAudit.status !== 'REJECTED';
+
+  if (!policyPassed && failedGates.length > 0) {
     for (const gate of failedGates) {
-      issues.push(`Hard Gate Fallido: ${gate}`);
+      if (!issues.includes(`Hard Gate Fallido: ${gate}`)) {
+        issues.push(`Hard Gate Fallido: ${gate}`);
+      }
     }
   }
 
@@ -182,12 +239,18 @@ export async function validateGeneratedAsset(
   return {
     overallScore,
     garmentIdentityScore,
+    garmentSimilarityScore,
+    structuralFidelityScore,
+    criticalFaults,
+    comprehensiveAudit: structuralAudit,
     colorAccuracyScore,
+    colorSimilarityScore,
     shapeScore,
     patternScore,
     detailScore,
     modelIdentityScore,
     shotAccuracyScore,
+    shotComplianceScore,
     poseDiversityScore,
     metrics,
     policyPassed,
@@ -204,8 +267,34 @@ export async function validateGeneratedAsset(
 export function evaluateValidationStatus(
   result: GarmentValidationResult
 ): 'APPROVED' | 'REVIEW_REQUIRED' | 'REJECTED' {
-  // Hard Gate failure blocks approval immediately
-  if (result.policyPassed === false) {
+  // Post-Generation QA: Hard Gate failure blocks approval immediately
+  const garmentSimilarity = result.garmentSimilarityScore ?? result.garmentIdentityScore;
+  const colorSimilarity = result.colorSimilarityScore ?? result.colorAccuracyScore;
+  const shotCompliance = result.shotComplianceScore ?? result.shotAccuracyScore;
+  const modelIdentity = result.modelIdentityScore;
+
+  // Hard Gate 1: Model Identity strictly must pass (>= 90)
+  if (!Number.isFinite(modelIdentity) || modelIdentity < 90) {
+    return 'REJECTED';
+  }
+
+  // Hard Gate 2: Any critical structural fault (button extra/missing, altered neckline, etc.) blocks approval
+  if (result.criticalFaults && result.criticalFaults.length > 0) {
+    return 'REJECTED';
+  }
+
+  // Hard Gate 3: Structural fidelity hard gate (>= 95)
+  if (result.structuralFidelityScore !== undefined && result.structuralFidelityScore < 95) {
+    return 'REJECTED';
+  }
+
+  const gates = [
+    [modelIdentity, DEFAULT_VALIDATION_POLICY.minModelIdentityScore], // >= 88
+    [garmentSimilarity, DEFAULT_VALIDATION_POLICY.minGarmentIdentityScore], // >= 90
+    [colorSimilarity, DEFAULT_VALIDATION_POLICY.minColorAccuracyScore], // >= 90
+    [shotCompliance, DEFAULT_VALIDATION_POLICY.minShotAccuracyScore], // >= 90
+  ];
+  if (result.policyPassed === false || gates.some(([score, minimum]) => !Number.isFinite(score) || score < minimum)) {
     return 'REJECTED';
   }
 

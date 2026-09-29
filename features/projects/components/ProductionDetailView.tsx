@@ -221,7 +221,7 @@ export function ProductionDetailView({ initialProject }: ProductionDetailViewPro
               <span>Talles: <strong>{project.garment.sizes.join(', ')}</strong></span>
               <span>•</span>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-mono border border-blue-500/30 bg-blue-500/10 text-blue-400">
-                Motor: {process.env.NEXT_PUBLIC_AI_MODE === 'real' ? 'Real AI (Gemini + Fal)' : 'Simulación (Mock)'}
+                Producción fotográfica
               </span>
             </div>
           </div>

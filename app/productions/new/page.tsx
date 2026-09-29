@@ -1,5 +1,5 @@
-import { NewProductionWizard } from '@/features/garments/components/NewProductionWizard';
+import { VisualProductionWizard } from '@/features/wizard/components/VisualProductionWizard';
 
 export default function NewProductionPage() {
-  return <NewProductionWizard />;
+  return <VisualProductionWizard />;
 }

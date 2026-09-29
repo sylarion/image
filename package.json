@@ -7,14 +7,17 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx tests/hardening.test.ts"
+    "test": "node tests/run-unit-tests.mjs",
+    "test:real": "tsx tests/real-catalog-runtime.test.ts"
   },
   "dependencies": {
+    "@google/genai": "^2.24.0",
     "clsx": "^2.1.1",
     "lucide-react": "^1.48.0",
     "next": "16.3.6",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "sharp": "^0.35.4",
     "tailwind-merge": "^3.7.0",
     "zod": "^4.6.5"
   },
